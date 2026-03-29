@@ -61,8 +61,31 @@
 
 ```bash
 npm install
+npm run dev:server
 npm run dev
 ```
+
+其中：
+
+- `npm run dev:server` 启动本机 Node API（默认 `http://localhost:3000`）
+- `npm run dev` 启动前端 Vite（默认 `http://localhost:5173`）
+
+可选一键启动（Linux/macOS）：
+
+```bash
+npm run dev:full
+```
+
+## 数据存储位置（本机正式版）
+
+- 数据库类型：SQLite
+- 默认文件：`data/assessment.db`
+- 运行后会自动生成：
+  - `data/assessment.db`
+  - `data/assessment.db-wal`
+  - `data/assessment.db-shm`
+
+> 说明：手动录入和 Excel 导入的数据都会写入该数据库文件，重启前后可保留。
 
 生产构建：
 

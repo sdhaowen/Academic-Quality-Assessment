@@ -58,7 +58,7 @@ function DataEntryPanel({
     setScores((prev) => ({ ...prev, [indicatorKey]: value }));
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
     setError("");
     if (!selectedStudent) {
@@ -70,12 +70,16 @@ function DataEntryPanel({
       setError("请选择有效的评价日期。");
       return;
     }
-    onSubmitManual({
-      studentId: selectedStudent.id,
-      stage: selectedStudent.stage,
-      scores,
-      assessedAt: parsed.valueOf(),
-    });
+    try {
+      await onSubmitManual({
+        studentId: selectedStudent.id,
+        stage: selectedStudent.stage,
+        scores,
+        assessedAt: parsed.valueOf(),
+      });
+    } catch (submitError) {
+      setError(submitError?.message || "保存失败，请稍后重试。");
+    }
   }
 
   return (

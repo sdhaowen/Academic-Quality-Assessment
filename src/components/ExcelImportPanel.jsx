@@ -133,7 +133,7 @@ export default function ExcelImportPanel({
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const data = reader.result;
         const workbook = XLSX.read(data, { type: "array" });
@@ -152,7 +152,7 @@ export default function ExcelImportPanel({
         const { imported, localErrors } = parseRows(rows);
         setErrors(localErrors);
         if (imported.length > 0) {
-          onImported(imported);
+          await onImported(imported);
           setSummary(`导入成功 ${imported.length} 条记录，图表已自动刷新。`);
         } else {
           setSummary("未导入有效记录，请检查数据格式。");

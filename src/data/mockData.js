@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import { INDICATOR_SETS, STAGES } from "../config/indicators";
+import { INDICATOR_SETS, STAGES } from "../config/indicators.js";
 
 const PRIMARY_CLASS_NAMES = ["小学-1班", "小学-2班", "小学-3班"];
 const JUNIOR_CLASS_NAMES = ["初中-1班", "初中-2班", "初中-3班"];
