@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dayjs from "dayjs";
 import {
   INDICATOR_SETS,
@@ -23,6 +23,7 @@ import {
   computeStudentGrowthSeries,
   scoreSeriesToArray,
 } from "./utils/analytics";
+import { exportClassReportPDF, exportStudentReportPDF } from "./utils/reportExport";
 
 function getStageClassOptions(students, stage) {
   const stageStudents = students.filter((student) => student.stage === stage);
@@ -68,6 +69,17 @@ function scoreTags(averageSeries, indicators) {
   return tags;
 }
 
+function scoreSeriesToTableData(indicators, series) {
+  return indicators.map((indicator, idx) => ({
+    indicator: indicator.label,
+    score: Number(series[idx] ?? 0).toFixed(2),
+  }));
+}
+
+function getActiveModuleTitle(activeModule) {
+  return MODULES.find((module) => module.key === activeModule)?.label ?? "模块";
+}
+
 function App() {
   const [stage, setStage] = useState(STAGES.PRIMARY);
   const [timeSpan, setTimeSpan] = useState(TIME_SPANS.HALF_YEAR);
@@ -80,6 +92,14 @@ function App() {
   const [selectedClassName, setSelectedClassName] = useState(
     getStageClassOptions(initialStudents, STAGES.PRIMARY)[0] ?? "",
   );
+  const [isPlayingGrowth, setIsPlayingGrowth] = useState(false);
+  const [growthFrameIndex, setGrowthFrameIndex] = useState(0);
+  const [isExportingStudent, setIsExportingStudent] = useState(false);
+  const [isExportingClass, setIsExportingClass] = useState(false);
+  const animationTimerRef = useRef(null);
+
+  const studentReportRef = useRef(null);
+  const classReportRef = useRef(null);
 
   const stageStudents = useMemo(
     () => students.filter((student) => student.stage === stage),
@@ -114,6 +134,14 @@ function App() {
     }
     return computeStudentGrowthSeries(assessments, selectedStudent.id, stage, indicators);
   }, [assessments, selectedStudent, stage, indicators]);
+
+  const animatedGrowthData = useMemo(() => {
+    if (!growthData.length) {
+      return [];
+    }
+    const end = Math.min(growthFrameIndex + 1, growthData.length);
+    return growthData.slice(0, end);
+  }, [growthData, growthFrameIndex]);
 
   const classAverageSeries = useMemo(() => {
     if (!selectedClassName) {
@@ -151,6 +179,11 @@ function App() {
     [stage, students, assessments],
   );
 
+  const classAverageTableData = useMemo(
+    () => scoreSeriesToTableData(indicators, classAverageSeries),
+    [indicators, classAverageSeries],
+  );
+
   const handleManualSubmit = (formData) => {
     const assessment = new AssessmentModel({
       id: `MAN-${formData.studentId}-${Date.now()}`,
@@ -174,6 +207,349 @@ function App() {
         }),
     );
     setAssessments((prev) => [...prev, ...normalized]);
+  };
+
+  useEffect(() => {
+    setGrowthFrameIndex(0);
+    setIsPlayingGrowth(false);
+  }, [selectedStudent?.id, stage]);
+
+  useEffect(() => {
+    if (animationTimerRef.current) {
+      clearInterval(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
+
+    if (!isPlayingGrowth || growthData.length <= 1) {
+      return undefined;
+    }
+
+    animationTimerRef.current = setInterval(() => {
+      setGrowthFrameIndex((prev) => {
+        if (prev >= growthData.length - 1) {
+          setIsPlayingGrowth(false);
+          return growthData.length - 1;
+        }
+        return prev + 1;
+      });
+    }, 1200);
+
+    return () => {
+      if (animationTimerRef.current) {
+        clearInterval(animationTimerRef.current);
+        animationTimerRef.current = null;
+      }
+    };
+  }, [isPlayingGrowth, growthData.length]);
+
+  const handleToggleGrowthPlay = () => {
+    if (!growthData.length) {
+      return;
+    }
+    if (growthFrameIndex >= growthData.length - 1) {
+      setGrowthFrameIndex(0);
+    }
+    setIsPlayingGrowth((prev) => !prev);
+  };
+
+  const handleResetGrowth = () => {
+    setIsPlayingGrowth(false);
+    setGrowthFrameIndex(0);
+  };
+
+  const handleExportStudentReport = async () => {
+    if (!selectedStudent || !studentReportRef.current || !growthAnalysis) {
+      return;
+    }
+    setIsExportingStudent(true);
+    try {
+      await exportStudentReportPDF({
+        element: studentReportRef.current,
+        studentName: selectedStudent.name,
+        className: selectedStudent.className,
+        stageLabel: STAGE_LABELS[stage],
+      });
+    } finally {
+      setIsExportingStudent(false);
+    }
+  };
+
+  const handleExportClassReport = async () => {
+    if (!selectedClassName || !classReportRef.current) {
+      return;
+    }
+    setIsExportingClass(true);
+    try {
+      await exportClassReportPDF({
+        element: classReportRef.current,
+        className: selectedClassName,
+        stageLabel: STAGE_LABELS[stage],
+      });
+    } finally {
+      setIsExportingClass(false);
+    }
+  };
+
+  const renderStudentDashboardModule = () => (
+    <>
+      <section className="panel">
+        <h3>分析对象选择</h3>
+        <div className="form-grid">
+          <label>
+            学生个人看板对象
+            <select
+              className="text-input"
+              value={selectedStudent?.id ?? ""}
+              onChange={(event) => setSelectedStudentId(event.target.value)}
+            >
+              {stageStudents.map((student) => (
+                <option key={student.id} value={student.id}>
+                  {student.name}（{student.className}）
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="toolbar-row">
+          <h3>多时间点成长轨迹动画</h3>
+          <div className="button-group">
+            <button type="button" className="btn-secondary" onClick={handleToggleGrowthPlay}>
+              {isPlayingGrowth ? "暂停播放" : "开始播放"}
+            </button>
+            <button type="button" className="btn-ghost" onClick={handleResetGrowth}>
+              重置到起点
+            </button>
+          </div>
+        </div>
+        <p className="muted">
+          当前帧：{growthData.length ? growthFrameIndex + 1 : 0} / {growthData.length}
+        </p>
+      </section>
+
+      <div ref={studentReportRef} className="report-snapshot">
+        <section className="chart-grid single-column">
+          <RadarChartCard
+            title="学生增值性图表（成长轨迹）"
+            subtitle={
+              selectedStudent
+                ? `${selectedStudent.name} (${selectedStudent.className})`
+                : "当前无可展示学生"
+            }
+            indicators={indicators}
+            series={animatedGrowthData}
+          />
+        </section>
+
+        <section className="insight-row">
+          <article className="panel">
+            <h3>长期增值分析（{TIME_SPAN_OPTIONS.find((item) => item.value === timeSpan)?.label}）</h3>
+            {growthAnalysis ? (
+              <>
+                <p>
+                  素养提升率：<strong>{growthAnalysis.improvementRate}%</strong>
+                </p>
+                <p>
+                  进步最快：<strong>{growthAnalysis.fastestImprovement.label}</strong>（+
+                  {growthAnalysis.fastestImprovement.delta.toFixed(2)}）
+                </p>
+                <p>
+                  需进一步提升：<strong>{growthAnalysis.needsAttention.label}</strong>（
+                  {growthAnalysis.needsAttention.delta > 0 ? "+" : ""}
+                  {growthAnalysis.needsAttention.delta.toFixed(2)}）
+                </p>
+                <p className="quality-tags">
+                  学业质量等级标注：
+                  {growthAnalysis.latestSeries.map((score, index) =>
+                    QUALITY_LEVEL_TAG[Math.round(score)] ? (
+                      <span key={indicators[index].key} className="badge">
+                        {indicators[index].label} {QUALITY_LEVEL_TAG[Math.round(score)]}
+                      </span>
+                    ) : null,
+                  )}
+                </p>
+              </>
+            ) : (
+              <p>暂无足够数据计算提升率。</p>
+            )}
+          </article>
+
+          <article className="panel">
+            <h3>评分参考（1-5 分）</h3>
+            <ul className="score-reference-list">
+              {Object.entries(SCORE_LEVEL_REFERENCE).map(([score, desc]) => (
+                <li key={score}>
+                  <strong>{score} 分：</strong>
+                  {desc}
+                </li>
+              ))}
+            </ul>
+          </article>
+        </section>
+      </div>
+
+      <section className="panel">
+        <div className="toolbar-row">
+          <h3>导出学生报告（PDF）</h3>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleExportStudentReport}
+            disabled={isExportingStudent || !growthAnalysis}
+          >
+            {isExportingStudent ? "导出中..." : "导出学生报告 PDF"}
+          </button>
+        </div>
+      </section>
+    </>
+  );
+
+  const renderClassAnalysisModule = () => (
+    <>
+      <section className="panel">
+        <h3>班级对象选择</h3>
+        <div className="form-grid">
+          <label>
+            班级雷达图对象
+            <select
+              className="text-input"
+              value={selectedClassName}
+              onChange={(event) => setSelectedClassName(event.target.value)}
+            >
+              {classOptions.map((className) => (
+                <option key={className} value={className}>
+                  {className}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <div ref={classReportRef} className="report-snapshot">
+        <section className="chart-grid single-column">
+          <RadarChartCard
+            title="班级雷达图（平均分）"
+            subtitle={`${selectedClassName || "-"}（可切换班级）`}
+            indicators={indicators}
+            series={
+              classAverageSeries.length
+                ? [
+                    {
+                      name: "班级均值",
+                      values: classAverageSeries,
+                      itemStyle: { color: "#3b82f6" },
+                      areaStyle: { opacity: 0.2 },
+                      lineStyle: { width: 2 },
+                    },
+                  ]
+                : []
+            }
+            footerNote={
+              scoreTags(classAverageSeries, indicators).length
+                ? `等级标注：${scoreTags(classAverageSeries, indicators)
+                    .map((item) => `${item.indicatorLabel}-${item.tag}`)
+                    .join("；")}`
+                : "等级标注：暂无轴线达到 3 分或 5 分整值。"
+            }
+          />
+        </section>
+
+        <section className="panel">
+          <h3>班级指标均值明细</h3>
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>指标</th>
+                  <th>平均分</th>
+                </tr>
+              </thead>
+              <tbody>
+                {classAverageTableData.map((row) => (
+                  <tr key={row.indicator}>
+                    <td>{row.indicator}</td>
+                    <td>{row.score}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <section className="panel">
+        <div className="toolbar-row">
+          <h3>导出班级报告（PDF）</h3>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleExportClassReport}
+            disabled={isExportingClass || !classAverageSeries.length}
+          >
+            {isExportingClass ? "导出中..." : "导出班级报告 PDF"}
+          </button>
+        </div>
+      </section>
+    </>
+  );
+
+  const renderMultiClassModule = () => (
+    <section className="chart-grid single-column">
+      <RadarChartCard
+        title="多班级对比图"
+        subtitle={selectedClasses.join(" / ") || "-"}
+        indicators={indicators}
+        series={multiClassSeries}
+      />
+    </section>
+  );
+
+  const renderSchoolModule = () => (
+    <section className="chart-grid single-column">
+      <RadarChartCard
+        title="校际对比图"
+        subtitle={selectedSchools.join(" / ") || "-"}
+        indicators={indicators}
+        series={schoolSeries}
+      />
+    </section>
+  );
+
+  const renderDataManagementModule = () => (
+    <section className="data-entry-grid">
+      <DataEntryPanel
+        stageIndicators={indicators}
+        stageStudents={stageStudents}
+        onSubmitManual={handleManualSubmit}
+        selectedStudentId={selectedStudent?.id ?? ""}
+        onSelectStudent={setSelectedStudentId}
+      />
+      <ExcelImportPanel
+        stage={stage}
+        students={students}
+        onImported={handleImportRows}
+        indicatorList={indicators}
+      />
+    </section>
+  );
+
+  const renderModuleContent = () => {
+    if (activeModule === "studentDashboard") {
+      return renderStudentDashboardModule();
+    }
+    if (activeModule === "classAnalysis") {
+      return renderClassAnalysisModule();
+    }
+    if (activeModule === "multiClassCompare") {
+      return renderMultiClassModule();
+    }
+    if (activeModule === "schoolCompare") {
+      return renderSchoolModule();
+    }
+    return renderDataManagementModule();
   };
 
   return (
@@ -232,7 +608,7 @@ function App() {
 
         <main className="main-content">
           <section className="notice-banner">
-            当前模块：{MODULES.find((module) => module.key === activeModule)?.label}（演示版默认展示全量图表）
+            当前模块：{getActiveModuleTitle(activeModule)}
           </section>
 
           <section className="card-grid">
@@ -243,155 +619,7 @@ function App() {
               </article>
             ))}
           </section>
-
-          <section className="chart-grid">
-            <RadarChartCard
-              title="学生增值性图表（历史对比）"
-              subtitle={
-                selectedStudent
-                  ? `${selectedStudent.name} (${selectedStudent.className})`
-                  : "当前无可展示学生"
-              }
-              indicators={indicators}
-              series={growthData}
-            />
-            <RadarChartCard
-              title="班级雷达图（平均分）"
-              subtitle={`${selectedClassName || "-"}（可切换班级）`}
-              indicators={indicators}
-              series={
-                classAverageSeries.length
-                  ? [
-                      {
-                        name: "班级均值",
-                        values: classAverageSeries,
-                        itemStyle: { color: "#3b82f6" },
-                        areaStyle: { opacity: 0.2 },
-                        lineStyle: { width: 2 },
-                      },
-                    ]
-                  : []
-              }
-              footerNote={
-                scoreTags(classAverageSeries, indicators).length
-                  ? `等级标注：${scoreTags(classAverageSeries, indicators)
-                      .map((item) => `${item.indicatorLabel}-${item.tag}`)
-                      .join("；")}`
-                  : "等级标注：暂无轴线达到 3 分或 5 分整值。"
-              }
-            />
-            <RadarChartCard
-              title="多班级对比图"
-              subtitle={selectedClasses.join(" / ") || "-"}
-              indicators={indicators}
-              series={multiClassSeries}
-            />
-            <RadarChartCard
-              title="校际对比图"
-              subtitle={selectedSchools.join(" / ") || "-"}
-              indicators={indicators}
-              series={schoolSeries}
-            />
-          </section>
-
-          <section className="insight-row">
-            <article className="panel">
-              <h3>长期增值分析（{TIME_SPAN_OPTIONS.find((item) => item.value === timeSpan)?.label}）</h3>
-              {growthAnalysis ? (
-                <>
-                  <p>
-                    素养提升率：<strong>{growthAnalysis.improvementRate}%</strong>
-                  </p>
-                  <p>
-                    进步最快：<strong>{growthAnalysis.fastestImprovement.label}</strong>（+
-                    {growthAnalysis.fastestImprovement.delta.toFixed(2)}）
-                  </p>
-                  <p>
-                    需进一步提升：<strong>{growthAnalysis.needsAttention.label}</strong>（
-                    {growthAnalysis.needsAttention.delta > 0 ? "+" : ""}
-                    {growthAnalysis.needsAttention.delta.toFixed(2)}）
-                  </p>
-                  <p className="quality-tags">
-                    学业质量等级标注：
-                    {growthAnalysis.latestSeries.map((score, index) =>
-                      QUALITY_LEVEL_TAG[Math.round(score)] ? (
-                        <span key={indicators[index].key} className="badge">
-                          {indicators[index].label} {QUALITY_LEVEL_TAG[Math.round(score)]}
-                        </span>
-                      ) : null,
-                    )}
-                  </p>
-                </>
-              ) : (
-                <p>暂无足够数据计算提升率。</p>
-              )}
-            </article>
-
-            <article className="panel">
-              <h3>评分参考（1-5 分）</h3>
-              <ul className="score-reference-list">
-                {Object.entries(SCORE_LEVEL_REFERENCE).map(([score, desc]) => (
-                  <li key={score}>
-                    <strong>{score} 分：</strong>
-                    {desc}
-                  </li>
-                ))}
-              </ul>
-            </article>
-          </section>
-
-          <section className="panel">
-            <h3>分析对象选择</h3>
-            <div className="form-grid">
-              <label>
-                学生个人看板对象
-                <select
-                  className="text-input"
-                  value={selectedStudent?.id ?? ""}
-                  onChange={(event) => setSelectedStudentId(event.target.value)}
-                >
-                  {stageStudents.map((student) => (
-                    <option key={student.id} value={student.id}>
-                      {student.name}（{student.className}）
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                班级雷达图对象
-                <select
-                  className="text-input"
-                  value={selectedClassName}
-                  onChange={(event) => setSelectedClassName(event.target.value)}
-                >
-                  {classOptions.map((className) => (
-                    <option key={className} value={className}>
-                      {className}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <p className="muted">
-              多班级对比与校际对比默认自动取当前学段前 2-3 个班级/学校进行展示。
-            </p>
-          </section>
-
-          <section className="data-entry-grid">
-            <DataEntryPanel
-              stageIndicators={indicators}
-              stageStudents={stageStudents}
-              onSubmitManual={handleManualSubmit}
-              selectedStudentId={selectedStudent?.id ?? ""}
-              onSelectStudent={setSelectedStudentId}
-            />
-            <ExcelImportPanel
-              stage={stage}
-              students={students}
-              onImported={handleImportRows}
-              indicatorList={indicators}
-            />
-          </section>
+          {renderModuleContent()}
         </main>
       </div>
     </div>
