@@ -146,6 +146,14 @@ body {
   border-radius: 10px;
 }
 
+.error-banner {
+  background: #ffecec;
+  border: 1px solid #f2c0c0;
+  color: #a32626;
+  padding: 12px;
+  border-radius: 10px;
+}
+
 .card-grid {
   display: grid;
   gap: 12px;

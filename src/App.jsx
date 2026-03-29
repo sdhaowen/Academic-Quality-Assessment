@@ -11,7 +11,6 @@ import {
   TIME_SPAN_OPTIONS,
 } from "./config/indicators";
 import { AssessmentModel } from "./config/models";
-import { assessments as initialAssessments, students as initialStudents } from "./data/mockData";
 import RadarChartCard from "./components/RadarChartCard";
 import DataEntryPanel from "./components/DataEntryPanel";
 import ExcelImportPanel from "./components/ExcelImportPanel";
@@ -24,6 +23,12 @@ import {
   scoreSeriesToArray,
 } from "./utils/analytics";
 import { exportClassReportPDF, exportStudentReportPDF } from "./utils/reportExport";
+import {
+  createAssessment,
+  createAssessmentsBulk,
+  fetchAssessments,
+  fetchStudents,
+} from "./utils/api";
 
 function getStageClassOptions(students, stage) {
   const stageStudents = students.filter((student) => student.stage === stage);
@@ -84,14 +89,12 @@ function App() {
   const [stage, setStage] = useState(STAGES.PRIMARY);
   const [timeSpan, setTimeSpan] = useState(TIME_SPANS.HALF_YEAR);
   const [activeModule, setActiveModule] = useState(MODULES[0].key);
-  const [students, setStudents] = useState(initialStudents);
-  const [assessments, setAssessments] = useState(initialAssessments);
-  const [selectedStudentId, setSelectedStudentId] = useState(
-    initialStudents.find((student) => student.stage === STAGES.PRIMARY)?.id ?? "",
-  );
-  const [selectedClassName, setSelectedClassName] = useState(
-    getStageClassOptions(initialStudents, STAGES.PRIMARY)[0] ?? "",
-  );
+  const [students, setStudents] = useState([]);
+  const [assessments, setAssessments] = useState([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [selectedClassName, setSelectedClassName] = useState("");
   const [isPlayingGrowth, setIsPlayingGrowth] = useState(false);
   const [growthFrameIndex, setGrowthFrameIndex] = useState(0);
   const [isExportingStudent, setIsExportingStudent] = useState(false);
@@ -100,6 +103,39 @@ function App() {
 
   const studentReportRef = useRef(null);
   const classReportRef = useRef(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadData() {
+      setIsLoadingData(true);
+      setLoadError("");
+      try {
+        const [studentsData, assessmentsData] = await Promise.all([
+          fetchStudents(),
+          fetchAssessments(),
+        ]);
+        if (!isMounted) {
+          return;
+        }
+        setStudents(studentsData);
+        setAssessments(assessmentsData);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+        const message = error?.message || "加载数据失败，请确认后端服务已启动。";
+        setLoadError(message);
+      } finally {
+        if (isMounted) {
+          setIsLoadingData(false);
+        }
+      }
+    }
+    loadData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const stageStudents = useMemo(
     () => students.filter((student) => student.stage === stage),
@@ -184,7 +220,7 @@ function App() {
     [indicators, classAverageSeries],
   );
 
-  const handleManualSubmit = (formData) => {
+  const handleManualSubmit = async (formData) => {
     const assessment = new AssessmentModel({
       id: `MAN-${formData.studentId}-${Date.now()}`,
       studentId: formData.studentId,
@@ -192,10 +228,11 @@ function App() {
       scores: formData.scores,
       assessedAt: formData.assessedAt,
     });
-    setAssessments((prev) => [...prev, assessment]);
+    const saved = await createAssessment(assessment);
+    setAssessments((prev) => [...prev, saved]);
   };
 
-  const handleImportRows = (importedRecords) => {
+  const handleImportRows = async (importedRecords) => {
     const normalized = importedRecords.map(
       (item) =>
         new AssessmentModel({
@@ -206,7 +243,8 @@ function App() {
           assessedAt: item.assessedAt,
         }),
     );
-    setAssessments((prev) => [...prev, ...normalized]);
+    const savedRecords = await createAssessmentsBulk(normalized);
+    setAssessments((prev) => [...prev, ...savedRecords]);
   };
 
   useEffect(() => {
@@ -607,19 +645,29 @@ function App() {
         </aside>
 
         <main className="main-content">
-          <section className="notice-banner">
-            当前模块：{getActiveModuleTitle(activeModule)}
-          </section>
+          {isLoadingData ? (
+            <section className="notice-banner">正在从本机数据库加载数据...</section>
+          ) : null}
+          {loadError ? <section className="error-banner">数据服务异常：{loadError}</section> : null}
+          {!loadError ? (
+            <section className="notice-banner">
+              当前模块：{getActiveModuleTitle(activeModule)}
+            </section>
+          ) : null}
 
-          <section className="card-grid">
-            {overviewCards.map((card) => (
-              <article key={card.title} className="info-card">
-                <h3>{card.title}</h3>
-                <p className="metric">{card.value}</p>
-              </article>
-            ))}
-          </section>
-          {renderModuleContent()}
+          {!loadError ? (
+            <>
+              <section className="card-grid">
+                {overviewCards.map((card) => (
+                  <article key={card.title} className="info-card">
+                    <h3>{card.title}</h3>
+                    <p className="metric">{card.value}</p>
+                  </article>
+                ))}
+              </section>
+              {renderModuleContent()}
+            </>
+          ) : null}
         </main>
       </div>
     </div>
