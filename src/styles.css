@@ -281,6 +281,55 @@ textarea {
   gap: 12px;
 }
 
+.single-column {
+  grid-template-columns: 1fr;
+}
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.button-group {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-secondary {
+  border: 1px solid #2e5ed7;
+  background: #2e5ed7;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btn-ghost {
+  border: 1px solid #c9d7f5;
+  background: #f7faff;
+  color: #2f4f97;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-ghost:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.report-snapshot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .panel-title-row {
   display: flex;
   align-items: center;

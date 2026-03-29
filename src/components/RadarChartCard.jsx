@@ -29,6 +29,9 @@ export default function RadarChartCard({
   series,
   footerNote,
   height = 360,
+  autoPlay = false,
+  animationDuration = 1600,
+  animationDelayStep = 700,
 }) {
   const normalizedSeries = series.map((item) => ({
     ...item,
@@ -40,6 +43,8 @@ export default function RadarChartCard({
       trigger: "item",
       formatter: (params) => formatTooltip(params, indicators),
     },
+    animation: true,
+    animationDuration: autoPlay ? animationDuration : 600,
     legend: {
       bottom: 0,
       textStyle: { color: "#445272" },
@@ -58,7 +63,10 @@ export default function RadarChartCard({
       {
         type: "radar",
         emphasis: { lineStyle: { width: 3 } },
-        data: normalizedSeries,
+        data: normalizedSeries.map((item, index) => ({
+          ...item,
+          animationDelay: autoPlay ? index * animationDelayStep : 0,
+        })),
       },
     ],
   };
