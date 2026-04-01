@@ -5,3 +5,6 @@ dist/
 data/*.db
 data/*.db-wal
 data/*.db-shm
+python-version/data/*.db
+python-version/data/*.db-wal
+python-version/data/*.db-shm
