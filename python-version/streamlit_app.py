@@ -179,8 +179,8 @@ def main():
     with col2:
         time_span = st.selectbox(
             "时间跨度",
-            [TIME_SPANS["halfYear"], TIME_SPANS["oneYear"], TIME_SPANS["fiveYears"]],
-            format_func=lambda x: {"halfYear": "半年", "oneYear": "一年", "fiveYears": "五年"}[x],
+            list(TIME_SPANS.keys()),
+            format_func=lambda key: TIME_SPANS[key]["label"],
         )
     with col3:
         module = st.selectbox("模块", list(MODULES.keys()), format_func=lambda x: MODULES[x])
