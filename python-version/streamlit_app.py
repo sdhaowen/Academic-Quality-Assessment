@@ -66,6 +66,18 @@ def fetch_runtime_data():
     return students, assessments
 
 
+def get_module_mapping() -> dict[str, str]:
+    if isinstance(MODULES, dict):
+        return {str(k): str(v) for k, v in MODULES.items()}
+    if isinstance(MODULES, list):
+        mapping: dict[str, str] = {}
+        for item in MODULES:
+            if isinstance(item, dict) and "key" in item and "label" in item:
+                mapping[str(item["key"])] = str(item["label"])
+        return mapping
+    return {}
+
+
 def radar_chart_figure(indicators, series, title):
     labels = [item["label"] for item in indicators]
     num_vars = len(labels)
@@ -119,6 +131,7 @@ def create_pdf_report(title: str, lines: list[str]) -> bytes:
 def run_startup_self_check() -> tuple[bool, list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
+    module_mapping = get_module_mapping()
 
     required_modules = {
         "student_dashboard",
@@ -127,7 +140,7 @@ def run_startup_self_check() -> tuple[bool, list[str], list[str]]:
         "school_compare",
         "data_management",
     }
-    missing_modules = sorted(required_modules - set(MODULES.keys()))
+    missing_modules = sorted(required_modules - set(module_mapping.keys()))
     if missing_modules:
         errors.append(f"配置项 MODULES 缺失：{', '.join(missing_modules)}")
 
@@ -233,6 +246,11 @@ def main():
     st.title("信息科技（人工智能）核心素养学业质量评价可视化工具（Python版）")
     st.caption("本机正式版：Streamlit + SQLite")
 
+    module_mapping = get_module_mapping()
+    if not module_mapping:
+        st.error("配置项 MODULES 格式无效，请检查 app/config.py。")
+        return
+
     if not render_self_check_banner():
         return
 
@@ -246,7 +264,7 @@ def main():
             format_func=lambda key: TIME_SPANS[key]["label"],
         )
     with col3:
-        module = st.selectbox("模块", list(MODULES.keys()), format_func=lambda x: MODULES[x])
+        module = st.selectbox("模块", list(module_mapping.keys()), format_func=lambda x: module_mapping[x])
 
     students, assessments = fetch_runtime_data()
     indicators = get_stage_indicators(stage)
