@@ -20,5 +20,13 @@ TIME_SPANS = {
     "fiveYears": {"label": "五年", "months": 60},
 }
 
+MODULES = [
+    {"key": "student_dashboard", "label": "学生个人看板"},
+    {"key": "class_analysis", "label": "班级分析"},
+    {"key": "multi_class_compare", "label": "多班级对比"},
+    {"key": "school_compare", "label": "校际对比"},
+    {"key": "data_management", "label": "数据管理"},
+]
+
 SPAN_MONTHS = {k: v["months"] for k, v in TIME_SPANS.items()}
 
