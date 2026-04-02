@@ -4,6 +4,7 @@ import json
 import time
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from uuid import uuid4
 
 import matplotlib.pyplot as plt
@@ -23,7 +24,14 @@ from app.analytics import (
     score_series_to_list,
     student_growth_records,
 )
-from app.config import MODULES, STAGE_JUNIOR, STAGE_LABELS, STAGE_PRIMARY, TIME_SPANS
+from app.config import (
+    DB_FILE,
+    MODULES,
+    STAGE_JUNIOR,
+    STAGE_LABELS,
+    STAGE_PRIMARY,
+    TIME_SPANS,
+)
 from app.db import (
     fetch_assessments,
     fetch_students,
@@ -108,6 +116,61 @@ def create_pdf_report(title: str, lines: list[str]) -> bytes:
     return buffer.getvalue()
 
 
+def run_startup_self_check() -> tuple[bool, list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    required_modules = {
+        "student_dashboard",
+        "class_analysis",
+        "multi_class_compare",
+        "school_compare",
+        "data_management",
+    }
+    missing_modules = sorted(required_modules - set(MODULES.keys()))
+    if missing_modules:
+        errors.append(f"配置项 MODULES 缺失：{', '.join(missing_modules)}")
+
+    required_spans = {"halfYear", "oneYear", "fiveYears"}
+    missing_spans = sorted(required_spans - set(TIME_SPANS.keys()))
+    if missing_spans:
+        errors.append(f"配置项 TIME_SPANS 缺失：{', '.join(missing_spans)}")
+
+    stage_keys = {STAGE_PRIMARY, STAGE_JUNIOR}
+    indicator_keys = set(INDICATOR_SETS.keys())
+    if not stage_keys.issubset(indicator_keys):
+        errors.append("INDICATOR_SETS 未完整覆盖小学/初中学段。")
+
+    if not Path(DB_FILE).parent.exists():
+        warnings.append(f"数据库目录不存在，将在首次启动时自动创建：{Path(DB_FILE).parent}")
+
+    try:
+        init_db()
+        seed_if_empty()
+    except Exception as exc:  # pragma: no cover - startup guard
+        errors.append(f"数据库初始化失败：{exc}")
+
+    return (len(errors) == 0, errors, warnings)
+
+
+def render_self_check_banner() -> bool:
+    ok, errors, warnings = run_startup_self_check()
+    if ok:
+        details = [f"数据库位置：{DB_FILE}"]
+        if warnings:
+            details.extend([f"提示：{item}" for item in warnings])
+        st.success("启动自检通过：" + "；".join(details))
+        return True
+
+    st.error("启动自检失败，请先修复以下问题：")
+    for item in errors:
+        st.error(f"- {item}")
+    for item in warnings:
+        st.warning(f"- {item}")
+    st.info("修复后请刷新页面重试。")
+    return False
+
+
 def upload_excel(stage: str, indicators, stage_students):
     uploaded = st.file_uploader("上传 Excel（姓名、学号、指标1...指标8、评价日期）", type=["xlsx", "xls"])
     if uploaded is None:
@@ -167,11 +230,11 @@ def upload_excel(stage: str, indicators, stage_students):
 
 
 def main():
-    init_db()
-    seed_if_empty()
-
     st.title("信息科技（人工智能）核心素养学业质量评价可视化工具（Python版）")
     st.caption("本机正式版：Streamlit + SQLite")
+
+    if not render_self_check_banner():
+        return
 
     col1, col2, col3 = st.columns([2, 2, 3])
     with col1:
